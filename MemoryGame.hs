@@ -9,6 +9,11 @@ import System.Random
 import qualified Graphics.UI.SDL.TTF as TTF
 import System.Time
 import Data.Time.Clock
+import Data.Typeable
+import Data.List.Split
+import System.Environment
+import Data.Char (isSpace)
+
 
 initParamsFile = "resources/init_board.txt"
 resourceLocationsFile = "resources/locations.txt"
@@ -16,9 +21,11 @@ background = "resources/background.bmp"
 backTheme = "resources/backTheme.bmp"
 buttonBackground = "resources/buttonBackground.bmp"
 scoreFile = "resources/scores.csv"
+currentName = "resources/currentName.txt"
+playerTimeFile = "resources/playerTime.txt"
 
 
-data MainMenuClick = DUMMY_CLICK | PLAY_GAME_CLICK | SCORE_CLICK | BACK_TO_GAME_CLICK | EXIT_CLICK	deriving (Enum,Eq)
+data GameClicks = DUMMY_CLICK | PLAY_GAME_CLICK | SCORE_CLICK | BACK_TO_GAME_CLICK | EXIT_CLICK | CONFIRM_CLICK	deriving (Enum,Eq)
 
 --font for text
 text :: String
@@ -41,10 +48,70 @@ goToMainMenu = do
 					then do
 						a <- gameScreen
 						print a
+						playerNameScreen
 						scoreScreen
 					else if (buttonPressed == SCORE_CLICK)
 					then scoreScreen
 					else return 0	
+
+playerNameScreen = do
+	print "cao"
+	writeFile currentName " "
+	renderPlayerNameScreen currentName
+	writeFile currentName ""
+	playerNameLoop 
+
+renderPlayerNameScreen currentName = do
+	screen <- getVideoSurface
+	clearScreen <- loadBMP background
+	buttonMainMenu <- loadBMP buttonBackground 	
+	blitSurface clearScreen Nothing screen Nothing
+	blitSurface buttonMainMenu Nothing screen (Just(Rect 220 360 0 0))
+		
+	font <- TTF.openFont text 50
+	textSurface <- TTF.renderUTF8Solid font "ENTER NAME" (SDL.Color 255 255 255)
+	blitSurface textSurface Nothing screen (Just(Rect 200 50 0 0))
+
+	font30 <- TTF.openFont text 30
+	letter <- readFile currentName
+	textSurface <- TTF.renderUTF8Solid font30 letter (SDL.Color 255 255 255)
+	blitSurface textSurface Nothing screen (Just(Rect 250 200 0 0))
+
+	font <- TTF.openFont text 45
+	textSurface <- TTF.renderUTF8Solid font "CONFIRM" (SDL.Color 0 0 0)
+	blitSurface textSurface Nothing screen (Just(Rect 220 360 0 0))
+	
+	SDL.flip screen	
+
+--mora da vraca klik
+playerNameLoop = do
+			event <- waitEvent
+			--print event
+			case event of
+				MouseButtonDown _ _ _ -> do
+					playerNameEvent <- handleEventPlayerScreen event
+					if(playerNameEvent == DUMMY_CLICK)
+						then playerNameLoop
+						else return SCORE_CLICK
+
+				KeyDown (Keysym n _ _) -> do
+					--if n == SDLK_f then print "DA" else print "NE"
+					let arrays = splitOn "_" $ show n
+					let letter = (arrays !! 1)
+					-- print letter
+					appendFile currentName letter
+					renderPlayerNameScreen currentName
+					-- if i == 6 then return SCORE_CLICK else 
+					playerNameLoop
+				_ -> playerNameLoop
+
+handleEventPlayerScreen (MouseButtonDown mx my ButtonLeft) = do	
+																if((x > 220) && (x < 370) && (y > 360) && (y < 410))
+																	then return SCORE_CLICK
+																	else return DUMMY_CLICK 
+																where x = fromIntegral mx
+														      		      y = fromIntegral my
+
 
 scoreScreen = do
 	renderScoreScreen
@@ -58,17 +125,18 @@ scoreScreenLoop = do
 				if(scoreEvenet == DUMMY_CLICK)
 					then scoreScreenLoop
 					else if(scoreEvenet == BACK_TO_GAME_CLICK)
-						then do
-							goToMainMenu
+						then goToMainMenu
 						else scoreScreenLoop
 			_ -> scoreScreenLoop
-
+				
 handleEventScoreScreen (MouseButtonDown mx my ButtonLeft) = do	
 																if((x > 220) && (x < 370) && (y > 370) && (y < 420))
 																	then return BACK_TO_GAME_CLICK
 																	else return DUMMY_CLICK 
 																where x = fromIntegral mx
 														      		      y = fromIntegral my
+
+
    
 renderScoreScreen = do
 	screen <- getVideoSurface
@@ -82,11 +150,16 @@ renderScoreScreen = do
 	blitSurface textSurface Nothing screen (Just(Rect 230 50 0 0))
 
 	font <- TTF.openFont text 35
-	textSurface <- TTF.renderUTF8Solid font "Main menu" (SDL.Color 0 0 0)
+	textSurface <- TTF.renderUTF8Solid font "MAIN MENU" (SDL.Color 0 0 0)
 	blitSurface textSurface Nothing screen (Just(Rect 220 370 0 0))
 
+-- write score
+	name <- readFile currentName
+	playerTime <- readFile playerTimeFile
+	appendFile scoreFile $ scoreLine name playerTime 
+
 --ceo score
-	font <- TTF.openFont text 25 
+	font <- TTF.openFont text 25
 	scoreInfoString <- scoreInfo
 	
 	let yCoordinates = [150, 175, 200, 225, 250]
@@ -98,6 +171,7 @@ renderScoreScreen = do
 	SDL.flip screen
 
 -- f-ja koja vadi 5 najboljih rezultata
+
 scoreInfo = do 
 	content <- readFile scoreFile
 	let scoreList = parseScoreInput $ words content
@@ -122,6 +196,7 @@ mainMenuScreen = do
 	
 loopMainMenu = do
 		event <- waitEvent
+		--print event
 		case event of 
 			MouseButtonDown _ _ _ -> do
 				mainMenuEvent <- handleEventMainMenu event
@@ -133,6 +208,7 @@ loopMainMenu = do
 						then return EXIT_CLICK
 						else return SCORE_CLICK	
 			_ -> loopMainMenu
+			
 
 handleEventMainMenu (MouseButtonDown mx my ButtonLeft) = do	
 							if((x > 220) && (x < 370) && (y > 270) && (y < 320))
@@ -213,7 +289,12 @@ handleEvent (MouseButtonDown mx my ButtonLeft) gameState = do
 loop gameState turn beginTime = do
 	if(isGameFinished gameState == True) then do
 		endTime <- getCurrentTime
-		appendFile scoreFile (scoreLine "ime" beginTime endTime)
+		writeFile playerTimeFile " "
+		writeFile playerTimeFile $ show (diffUTCTime endTime beginTime) 
+
+		-- name <- readFile currentName
+		-- print name
+		-- appendFile scoreFile (scoreLine name beginTime endTime)
 		
 	else if(turn == 2) then do
 		newGameState <- handleSecondTurn gameState
@@ -227,9 +308,9 @@ loop gameState turn beginTime = do
 			_ -> loop gameState turn beginTime
 
 --pravljenje linije za upis u scoreFile
-scoreLine name beginTime endTime = 
+scoreLine name playertime = 
 	let nameSpace = ";" ++ name ++ ","
-	    nameTime = nameSpace ++ show (diffUTCTime endTime beginTime)
+	    nameTime = nameSpace ++ playertime
 	in nameTime
 
 isGameFinished gameState = foldl (\acc (a,b,c,d,e,f) -> if (d == 0) then False else acc) True gameState
